@@ -1,18 +1,29 @@
 import platform
+import threading
+from pygame import mixer
 import time
 
-# 1. ประกาศตัวควบคุมระบบเสียงตามสไตล์เดิม
-if platform.system() == "Windows":
-    import winsound
-    def beep_drowsy():
-        winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
-    def beep_distract():
-        winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
-else:
-    import sys
-    def beep_drowsy(): sys.stdout.write('\a'); sys.stdout.flush()
-    def beep_distract(): sys.stdout.write('\a'); sys.stdout.flush()
+# สั่งให้ระบบมิกเซอร์เสียงเริ่มต้นทำงาน
+mixer.init()
 
+# 1. ฟังก์ชันดิบสำหรับเรียกเปิดไฟล์มัลติมีเดียเบื้องหลัง
+def _play_mp3(file_path):
+    try:
+        # ใช้ระบบแชนเนลแยกเพื่อเล่นเสียงสั้นฉับไว (Sound Object) ไม่กวนเพลงหลัก
+        sound = mixer.Sound(file_path)
+        # 📌 เพิ่มบรรทัดนี้: สั่งตั้งค่าความดัง (ใส่ค่าระหว่าง 0.0 ถึง 1.0)
+        sound.set_volume(1.0) 
+        sound.play()
+    except Exception as e:
+        print(f"ระบบเสียงติดขัด: {e}")
+
+# 2. ฟังก์ชันหลักที่เราเอาไปเรียกใช้ในเงื่อนไขลูป `while` 
+def beep_drowsy():
+    # แตกเธรดเพื่อไปสั่งเปิดไฟล์ mp3 แยกฉากหลัง ไม่ล็อกจอกล้องวิดีโอ
+     threading.Thread(target=_play_mp3, args=("drowsy_alarm.wav",), daemon=True).start()
+    
+def beep_distract():
+    threading.Thread(target=_play_mp3, args=("distract_alarm.wav",), daemon=True).start()
 
 # 2. ส่วนคำสั่งทดสอบรันเสียงจริง
 print("กำลังทดสอบเสียงที่ 1: เสียงเตือนเมื่อหลับตา (SystemExclamation)")

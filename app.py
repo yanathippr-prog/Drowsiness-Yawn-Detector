@@ -1,4 +1,11 @@
 # คำนวณทิศใบหน้า
+#NOSE_TIP = 1
+#EYE_LEFT_CENTER = 33
+#EYE_RIGHT_CENTER = 263
+#POSE_FRAMES = 15       
+#pose_counter = 5       
+#distract_total = 0         
+
             nose = face_landmarks[NOSE_TIP]
             le = face_landmarks[EYE_LEFT_CENTER]
             re = face_landmarks[EYE_RIGHT_CENTER]
@@ -39,3 +46,36 @@
                 if pose_counter >= POSE_FRAMES:
                     distract_total += 1
                 pose_counter = 0
+
+ # พิมพ์บอกสถานะการมองปัจจุบันที่มุมบนซ้าย (เปลี่ยนสีตามสถานะจริง)
+            #cv2.putText(frame, f"STATUS: {status_text}", (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2)
+            # ป้ายไฟสรุปแต้มสะสมชิ้นใหม่ วางต่อท้ายจากแต้มเดิม (พิกัด Y = 480)
+            #cv2.putText(frame, f"Total Distract: {distract_total}", (30, 480), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 100, 0), 2)
+
+
+
+# 1. ประกาศตัวควบคุมระบบเสียงตามสไตล์เดิม
+if platform.system() == "Windows":
+    import winsound
+    def beep_drowsy():
+        winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
+    def beep_distract():
+        winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS | winsound.SND_ASYNC)
+else:
+    import sys
+    def beep_drowsy(): sys.stdout.write('\a'); sys.stdout.flush()
+    def beep_distract(): sys.stdout.write('\a'); sys.stdout.flush()
+
+
+# 2. ส่วนคำสั่งทดสอบรันเสียงจริง
+print("กำลังทดสอบเสียงที่ 1: เสียงเตือนเมื่อหลับตา (SystemExclamation)")
+beep_drowsy() # มีวงเล็บ () เพื่อสั่งให้ฟังก์ชันทำงานจริง
+
+# สั่งให้ Python หยุดรอ 3 วินาที เพื่อให้เสียงเล่นจนจบเข้าหูฟัง ไม่ปิดโปรแกรมหนีไปก่อน
+time.sleep(3) 
+
+print("กำลังทดสอบเสียงที่ 2: เสียงเตือนเมื่อก้มหน้า/ไม่มองทาง (SystemAsterisk)")
+beep_distract()
+
+time.sleep(3)
+print("สิ้นสุดการทดสอบระบบเสียง")
