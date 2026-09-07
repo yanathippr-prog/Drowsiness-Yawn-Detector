@@ -1,12 +1,11 @@
 import cv2
 import numpy as np # calculator
 import mediapipe as mp
-import platform
 import threading
-import time
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 from pygame import mixer
+import time
 # สั่งให้ระบบมิกเซอร์เสียงเริ่มต้นทำงาน
 mixer.init()
 
@@ -17,7 +16,11 @@ def _play_mp3(file_path):
         sound = mixer.Sound(file_path)
         # 📌 เพิ่มบรรทัดนี้: สั่งตั้งค่าความดัง (ใส่ค่าระหว่าง 0.0 ถึง 1.0)
         sound.set_volume(1.0) 
-        sound.play()
+        channel = sound.play()
+        if file_path == "drowsy_alarm.wav":
+            time.sleep(0.3)  # ปรับความยาวเสียงหลับตาตรงนี้ (0.3 วินาที)
+            channel.stop()   # ตัดจบเสียงทันที
+
     except Exception as e:
         print(f"ระบบเสียงติดขัด: {e}")
 
@@ -74,11 +77,11 @@ BLINKLESS_THRESHOLD = 240  # ต้องลืมตาค้างนานต
 YAWN_FRAMES = 20       # ต้องอ้าปากกว้างติดต่อกันนาน 20 เฟรมขึ้นไป ถึงจะตัดสินว่า "หาว"
 
 blink_counter = 0
-staring_counter = 0        # ตัวนับเฟรมสะสมของการลืมตาค้าง
-staring_total = 0          # แต้มสะสม: จำนวนครั้งที่เหม่อลอยค้าง
+drowsy_total = 0       # แต้มสะสม: จำนวนครั้งที่หลับใน
 yawn_counter = 0
 yawn_total = 0         # (ของแถม) ตัวแปรนับจำนวนครั้งที่หาวสะสมในโปรแกรม
-drowsy_total = 0       # แต้มสะสม: จำนวนครั้งที่หลับใน
+staring_counter = 0        # ตัวนับเฟรมสะสมของการลืมตาค้าง
+staring_total = 0          # แต้มสะสม: จำนวนครั้งที่เหม่อลอยค้าง
 
 # --- เตรียมระบบตรวจจับ ---
 base_options = python.BaseOptions(model_asset_path='face_landmarker.task')
@@ -105,9 +108,30 @@ while cap.isOpened():
             left_ear = calculate_ear(face_landmarks, LEFT_EYE)
             right_ear = calculate_ear(face_landmarks, RIGHT_EYE)
             avg_ear = (left_ear + right_ear) / 2.0
-
             # 2. คำนวณค่า MAR ของปาก
             mar = calculate_mar(face_landmarks, INNER_MOUTH)
+
+            frame_count += 1
+            if frame_count <= CALIBRATION_FRAMES:
+                # ช่วง 5 วินาทีแรก: บันทึกข้อมูลพิกัดชีวภาพเข้าคลังดาต้าเบส
+                calib_ear_list.append(avg_ear)
+                calib_mar_list.append(mar)
+                
+                # แสดงผลคำแนะนำบนหน้าจอให้คนขับมองตรงนิ่ง ๆ
+                cv2.putText(frame, f"CALIBRATING BASELINE: {int((frame_count/CALIBRATION_FRAMES)*100)}%", (30, 80), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+                cv2.putText(frame, "Please look forward with normal eyes...", (30, 120), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+                continue
+            elif frame_count == CALIBRATION_FRAMES + 1:
+                # 🧠 จังหวะผ่านวินาทีที่ 5: สั่งให้คณิตศาสตร์สถิติวินิจฉัยคำนวณหาเกณฑ์เฉพาะบุคคล (Threshold Matrix)
+                mean_ear = np.mean(calib_ear_list)  # หาค่าเฉลี่ยสัดส่วนตาสภาวะปกติ
+                mean_mar = np.mean(calib_mar_list)  # หาค่าเฉลี่ยสัดส่วนปากสภาวะปกติ
+                
+                # นำมาหักลบส่วนต่างทางชีววิทยาเพื่อสร้างโมเดลเกณฑ์ตัดแต้ม (Adaptive Calibration Model)
+                EAR_THRESHOLD = mean_ear * 0.75     # คำนวณว่าถ้าตาหรี่ลงเหลือ 75% ของตาปกติ แปลว่าหลับตา
+                MAR_THRESHOLD = mean_mar + 0.05     # คำนวณว่าถ้าปากอ้ากว้างเกิน 2.2 เท่าของปากปกติ แปลว่าหาว
+                print(f"[ML Configured] EAR THRESHOLD: {EAR_THRESHOLD:.2f} | MAR THRESHOLD: {MAR_THRESHOLD:.2f} | EAR: {mean_ear:.2f} | MAR: {mean_mar:.2f}")
 
             # 3. ตรวจสอบการหลับตา (Drowsiness/Sleep Detection)
             if avg_ear < EAR_THRESHOLD:
@@ -116,8 +140,9 @@ while cap.isOpened():
                     staring_total += 1
                 staring_counter = 0
                 if blink_counter >= CONSEC_FRAMES:
-                    cv2.putText(frame, "!!! DROWSINESS ALERT !!!", (30, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
-                    if blink_counter == CONSEC_FRAMES :
+                    cv2.putText(frame, "!!! DROWSINESS ALERT !!!", (30, 80), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+                    if (blink_counter - CONSEC_FRAMES) % 10 == 0 :
                         beep_drowsy()
             else:
                 if blink_counter >= CONSEC_FRAMES:
@@ -138,7 +163,12 @@ while cap.isOpened():
                 # ถ้าอ้าปากกว้างค้างไว้นานจนถึงจำนวนเฟรมที่ตั้งไว้
                 if yawn_counter >= YAWN_FRAMES:
                     cv2.putText(frame, "!!! YAWNING DETECTED !!!", (30, 140), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 3)
-  
+            elif mean_mar <= mar < MAR_THRESHOLD and avg_ear < (mean_ear * 0.92):
+                yawn_counter += 1
+                if yawn_counter >= YAWN_FRAMES:
+                    cv2.putText(frame, "!!! YAWNING (HAND COVERED) !!!", (30, 130), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 3)
+                    if yawn_counter == YAWN_FRAMES: beep_drowsy()
             else:
                 # ของแถม: ถ้าหุบปากลงแล้ว และก่อนหน้านี้สถิติเฟรมถึงเกณฑ์แปลว่าหาวจบไป 1 ครั้ง
                 if yawn_counter >= YAWN_FRAMES:
